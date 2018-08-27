@@ -1,6 +1,7 @@
 import sqlite3
 
 class YchDb:
+    # Queries
     __create_tables_query="""
     CREATE TABLE IF NOT EXISTS ychs
     (chatid bigint, ychid int, maxprice float, endtime bigint, link varchar,
@@ -34,10 +35,10 @@ class YchDb:
 
     def get_all_user_watches(self, userid):
         cursor = self.conn.cursor()
-        cursor.execute(self.__select_all_by_user_query, (id,))
+        cursor.execute(self.__select_all_by_user_query, (userid,))
         return cursor.fetchall()
 
     def delete_watch(self, watchid):
         cursor = self.conn.cursor()
-        cursor.execute(self.__delete_query, (id,))
+        cursor.execute(self.__delete_query, (watchid,))
         self.conn.commit()    
