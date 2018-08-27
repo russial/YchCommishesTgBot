@@ -8,11 +8,10 @@ import configparser
 import os.path
 import sqlite3
 import time
+import linkutils
 
 headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
 ych_url = 'https://ych.commishes.com/auction/getbids/{}'
-
-dic32 = '0123456789ABCDEFGHIJKLMNOPQRSTUV'
 
 # Initialisation
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',level=logging.INFO)
@@ -35,27 +34,6 @@ if not dbexists:
     PRIMARY KEY (chatid, ychid))
     """)
 conn.commit()
-
-def get_32(id):
-    rem = list()
-    while id > 0:
-        rem.append(id % 32)
-        id = id // 32
-    rem.reverse()
-    id32 = ''
-    for i in rem:
-        id32 += dic32[i]
-    return id32
-
-def get_10(id32):
-    l = len(id32) - 1
-    pos = 0
-    id = 0
-    for sym in id32:
-        i = dic32.find(sym)
-        id += i*(32**(l-pos))
-        pos += 1
-    return id
 
 def add_new_ych_to_db(ychdata):
     conn = sqlite3.connect("shorobot.db")
@@ -88,7 +66,7 @@ def delete_ych(id):
 def get_ychid_by_link(url):
     url = url.split('/')
     if len(url) >= 6:
-        return get_10(url[5])
+        return linkutils.get_10(url[5])
     else:
         return 0
 
