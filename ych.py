@@ -6,9 +6,9 @@ from telegram.ext import Updater, MessageHandler, Filters, CommandHandler
 import logging
 import configparser
 import os.path
-import sqlite3
 import time
 import linkutils
+import sqlitedb
 
 headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
 ych_url = 'https://ych.commishes.com/auction/getbids/{}'
@@ -20,48 +20,7 @@ config = configparser.ConfigParser()
 config.read('config.ini')
 updater = Updater(token=config['bot']['TOKEN'])
 dispatcher = updater.dispatcher
-dbexists = os.path.isfile("shorobot.db")
-
-# Connect to DB
-conn = sqlite3.connect("shorobot.db")
-cursor = conn.cursor()
-
-# Init DB if not exists
-if not dbexists:
-    cursor.execute("""
-    CREATE TABLE ychs
-    (chatid bigint, ychid int, maxprice float, endtime bigint, link varchar,
-    PRIMARY KEY (chatid, ychid))
-    """)
-conn.commit()
-
-def add_new_ych_to_db(ychdata):
-    conn = sqlite3.connect("shorobot.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-    INSERT OR REPLACE INTO ychs (chatid, ychid, maxprice, endtime, link) VALUES (?,?,?,?,?)
-    """, ychdata)
-    # TODO: INSERT OR DO NOTHING
-    conn.commit()    
-
-def get_all_watched_yches():
-    conn = sqlite3.connect("shorobot.db")
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM ychs')
-    return cursor.fetchall()
-
-def get_all_watched_yches_by_user(id):
-    conn = sqlite3.connect("shorobot.db")
-    cursor = conn.cursor()
-    cursor.execute('SELECT (ychid) FROM ychs WHERE chatid=?', (id,))
-    return cursor.fetchall()
-
-def delete_ych(id):
-    conn = sqlite3.connect("shorobot.db")
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM ychs WHERE ychid = ?', (id,))
-    # TODO: INSERT OR DO NOTHING
-    conn.commit()    
+db = sqlitedb.YchDb('shorobot.db')
 
 def get_ychid_by_link(url):
     url = url.split('/')
@@ -85,7 +44,7 @@ def reply_to_message(bot, update):
     bid, endtime = data["payload"][0], data["auction"]["ends"]
     name, b = bid["name"], float(bid["bid"])
     ychdata=[update.message.chat.id, data["id"], bid["bid"], endtime, update.message.text]
-    add_new_ych_to_db(ychdata)
+    db.add_new_ych(ychdata)
     bot.send_message(chat_id = update.message.chat_id, text = '*You\'ve added Ych to watchlist.*\nYchID: #{}\nLink: {}\nLast bid: *{}* - *{}$*'.format(data["id"],ychdata[4], name, b), parse_mode=telegram.ParseMode.MARKDOWN)
 
 def start(bot, update):
@@ -93,9 +52,9 @@ def start(bot, update):
 You can send me link to Ych you want to get updates about and I will notify you about changes.""")
 
 def stop(bot, update):
-    ychs = list(get_all_watched_yches_by_user(update.message.chat.id))
+    ychs = list(db.get_all_user_watches(update.message.chat.id))
     for y in ychs:
-        delete_ych(y[0])
+        db.delete_watch(y[0])
     bot.send_message(chat_id = update.message.chat_id, text = 'Thanks for using this bot. I\'ve cleaned all your subscriptions, so I won\'t message you anymore. Goodbye.')
 
 # Register Handlers
@@ -110,7 +69,7 @@ updater.start_polling()
 # ID, Chat.ID, YchID, MaxPrice, EndTime
 while True:
     time.sleep(60)
-    for val in get_all_watched_yches():
+    for val in db.get_all_watches():
         val = list(val)
         newinfo = get_ych_info(val[1])
         newbid = newinfo["payload"][0]
@@ -119,8 +78,8 @@ while True:
         print(newbid["bid"], val[2])
         if float(newbid["bid"]) > val[2]:
             updater.bot.send_message(chat_id = val[0], text = '*New bid on Ych #{}.*\nLink: {}\nUser: *{} - {}$*'.format(val[1], val[4], newbid["name"], newbid["bid"]), parse_mode=telegram.ParseMode.MARKDOWN)
-        add_new_ych_to_db(newvals)
+        db.add_new_ych(newvals)
         if newendtime < newinfo["time"]:
             updater.bot.send_message(chat_id = val[0], text = '*Ych #{} finished.*\nLink: {}\nWinner: *{} - {}$*'.format(val[1], val[4], newbid["name"], newbid["bid"]), parse_mode=telegram.ParseMode.MARKDOWN)
-            delete_ych(val[1])
+            db.delete_watch(val[1])
         print(val)
