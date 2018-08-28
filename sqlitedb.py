@@ -12,7 +12,7 @@ class YchDb:
         'VALUES (?,?,?,?,?)'
     )
     __select_all_query = 'SELECT * FROM ychs'
-    __select_all_by_user_query = 'SELECT (ychid) FROM ychs WHERE chatid=?'
+    __select_all_by_user_query = 'SELECT (ychid,maxprice,endtime,link) FROM ychs WHERE chatid=?'
     __delete_query = 'DELETE FROM ychs WHERE ychid = ?'
 
     def __init__(self, path):
@@ -26,6 +26,7 @@ class YchDb:
         self.conn.commit()
 
     def add_new_ych(self, ychdata):
+        # TODO: Save username to DB
         cursor = self.conn.cursor()
         cursor.execute(self.__add_new_query, ychdata)
         self.conn.commit()   
@@ -43,4 +44,4 @@ class YchDb:
     def delete_watch(self, watchid):
         cursor = self.conn.cursor()
         cursor.execute(self.__delete_query, (watchid,))
-        self.conn.commit()    
+        self.conn.commit()

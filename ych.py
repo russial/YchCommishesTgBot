@@ -28,7 +28,8 @@ class YchBot:
     )
     __ych_fin_str = '*Ych #{} finished.*\nLink: {}\nWinner: *{} - {}$*'
     __error_str = 'You probably made mistake somewhere'
-
+    __watchlist_start_str = '*Your watchlist:*'
+    __watchlist_watch = '\n{}) Ych #{}\n*Current bid: {}$*'
     # Constants
     __parse_mode = telegram.ParseMode.MARKDOWN
 
@@ -52,6 +53,7 @@ class YchBot:
         newendtime = newinfo["auction"]["ends"]
         curtime = newinfo["time"]
         # Setting values for DB
+        # TODO: Save username to DB
         newvals = [chatid, ychid, newbid, newendtime, link]
         print(newbid, oldbid)
         # If bid from new JSON in not equal to old bid
@@ -109,6 +111,7 @@ class YchBot:
         last_bid, endtime = data["payload"][0], data["auction"]["ends"]
         name, bid = last_bid["name"], float(last_bid["bid"])
         # Set ychdata array for DB function
+         # TODO: Save username to DB
         ychdata = [
             update.message.chat.id, # 0: ChatID
             ychid,                  # 1: YchID
@@ -137,8 +140,22 @@ class YchBot:
     def stop(self, bot, update):
         ychs = list(self.db.get_all_user_watches(update.message.chat.id))
         for y in ychs:
-            self.db.delete_watch(y[0])
+            self.db.delete_watch(y[0]) # y[0] - YchID
         bot.send_message(chat_id = update.message.chat_id, text = self.__stop_str)
+
+    def watchlist(self, bot, update):
+        message = self.__watchlist_start_str
+        ychs = list(self.db.get_all_user_watches(update.message.chat.id))
+        for i, ych in enumerate(ychs, start = 1):
+            # TODO: Link in message
+            # TODO: Save username to DB
+            # TODO: Endtime in message
+            ychid, bid, _, _  = ych
+            message += self.__watchlist_watch.format(
+                i,
+                ychid,
+                bid
+            )
 
     # Init
     def __init__(self):
@@ -153,6 +170,7 @@ class YchBot:
         self.handlers = [
             CommandHandler('start', self.start),
             CommandHandler('stop', self.stop),
+            CommandHandler('list', self.watchlist),
             MessageHandler(Filters.all, self.reply)
         ]
         for handler in self.handlers:
