@@ -5,6 +5,8 @@ import configparser
 import time
 import sqlitedb
 import parseutils
+import datetime
+import dateutil.relativedelta
 
 class YchBot:
     # Strings
@@ -29,7 +31,9 @@ class YchBot:
     __ych_fin_str = '*Ych #{} finished.*\nLink: {}\nWinner: *{} - ${}*'
     __error_str = 'You probably made mistake somewhere'
     __watchlist_start_str = '*Your watchlist:*'
-    __watchlist_watch_str = '\n{}) Ych #[{}]({})\n*Current bid: {} - ${}*'
+    __watchlist_watch_str = (
+        '*\n{}) Ych #*[{}]({})\nTime left: *{}*\nCurrent bid: *{} - ${}*'
+    )
     __delete_str = 'Deleted Ych #{}'
     # Constants
     __parse_mode = telegram.ParseMode.MARKDOWN
@@ -147,12 +151,22 @@ class YchBot:
         message = self.__watchlist_start_str
         ychs = list(self.db.get_all_user_watches(update.message.chat.id))
         for i, ych in enumerate(ychs, start = 1):
-            # TODO: Endtime in message
             ychid, name, bid, endtime, link  = ych
+            # Time difference stuff
+            now = datetime.datetime.now()
+            end = datetime.datetime.fromtimestamp(endtime)
+            dif = dateutil.relativedelta.relativedelta(end, now)
+            remtime = ''
+            attrs = ['days', 'hours', 'minutes']
+            for attr in attrs:
+                if getattr(dif, attr):
+                    remtime += "{} {} ".format(getattr(dif, attr), attr)
+            # Send a message
             message += self.__watchlist_watch_str.format(
                 i,
                 ychid,
                 link,
+                remtime,
                 name,
                 bid
             )

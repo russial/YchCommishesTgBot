@@ -16,7 +16,8 @@ class YchDb:
         'SELECT chatid,ychid,name,maxprice,endtime,link FROM ychs'
     ) 
     __select_all_by_user_query = (
-        'SELECT ychid,name,maxprice,endtime,link FROM ychs WHERE chatid=?'
+        'SELECT ychid,name,maxprice,endtime,link FROM ychs WHERE chatid=? '
+        'ORDER BY endtime'
     )
     __delete_query = 'DELETE FROM ychs WHERE ychid = ? AND chatid = ?'
 
