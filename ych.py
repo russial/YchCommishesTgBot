@@ -22,11 +22,14 @@ class YchBot:
         ', so I won\'t message you anymore. Goodbye.'
     )
     __new_bid_str = '*New bid on Ych #{}.*\nLink: {}\nUser: *{} - {}$*'
+    __cancel_bid_str = (
+        '*Previous bid on Ych #{} has been cancelled.*\n'
+        'Link: {}\n\n*Current bid*\nUser: *{} - {}$*'
+    )
     __ych_fin_str = '*Ych #{} finished.*\nLink: {}\nWinner: *{} - {}$*'
     __error_str = 'You probably made mistake somewhere'
 
     # Constants
-
     __parse_mode = telegram.ParseMode.MARKDOWN
 
     # Functions
@@ -55,16 +58,22 @@ class YchBot:
         if float(newbid) != oldbid:
             # Add new info to DB
             self.db.add_new_ych(newvals)
+            # Check if bid has been cancelled
+            msg = ''
+            if float(newbid) > oldbid:
+                msg = self.__new_bid_str
+            else:
+                msg = self.__cancel_bid_str
             # Send message about new bid(or cancel of prev bid)
             self.updater.bot.send_message(
                 chat_id = chatid,
-                text = self.__new_bid_str.format(
+                text = msg.format(
                     ychid, 
                     link, 
                     newname, 
                     newbid
                 ), 
-                parse_mode=self.__parse_mode
+                parse_mode = self.__parse_mode
             )
         # If auction end time is less than curtime
         if newendtime < curtime:
@@ -77,7 +86,7 @@ class YchBot:
                     newname, 
                     newbid
                 ), 
-                parse_mode=self.__parse_mode
+                parse_mode = self.__parse_mode
             )
             # Delete from DB
             self.db.delete_watch(YchBot)
