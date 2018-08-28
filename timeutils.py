@@ -1,5 +1,6 @@
 import datetime
 import dateutil.relativedelta
+import time
 
 def readabletime(dif):
     remtime = ''
@@ -9,10 +10,11 @@ def readabletime(dif):
             remtime += "{} {} ".format(getattr(dif, attr), attr)
     return remtime
 
-def get_diff(end, start = datetime.datetime.now()):
+def get_diff(end, start):
     return dateutil.relativedelta.relativedelta(end, start)
 
 def get_rdbl_timediff(endstamp):
     end = datetime.datetime.fromtimestamp(endstamp)
-    dif = get_diff(end)
+    start = datetime.datetime.fromtimestamp(time.time())
+    dif = get_diff(end, start)
     return readabletime(dif)
