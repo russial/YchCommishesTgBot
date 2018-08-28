@@ -30,68 +30,78 @@ class YchBot:
     __parse_mode = telegram.ParseMode.MARKDOWN
 
     # Functions
-
     def update_cycle(self):
-        # TODO: Refactoring of this function
         while True:
-            time.sleep(60)
-            for val in self.db.get_all_watches():
-                # ID, Chat.ID, YchID, MaxPrice, EndTime
-                val = list(val)
-                newinfo = parseutils.get_ych_info(val[1])
-                newbid = newinfo["payload"][0]
-                newendtime = newinfo["auction"]["ends"]
-                newvals = [val[0], val[1], newbid["bid"], newendtime, val[4]]
-                print(newbid["bid"], val[2])
-                if float(newbid["bid"]) > val[2]:
-                    self.updater.bot.send_message(
-                        chat_id = val[0],
-                        text = self.__new_bid_str.format(
-                            val[1], 
-                            val[4], 
-                            newbid["name"], 
-                            newbid["bid"]
-                        ), 
-                        parse_mode=self.__parse_mode
-                    )
-                self.db.add_new_ych(newvals)
-                if newendtime < newinfo["time"]:
-                    self.updater.bot.send_message(
-                        chat_id = val[0],
-                        text = self.__ych_fin_str.format(
-                            val[1], 
-                            val[4], 
-                            newbid["name"], 
-                            newbid["bid"]
-                        ), 
-                        parse_mode=self.__parse_mode
-                    )
-                    self.db.delete_watch(val[1])
-                print(val)
+            for ych in self.db.get_all_watches():
+                self.update_ych(list(ych))
+            time.sleep(60)            
+
+    # Updates info about single Ych
+    def update_ych(self, ych):
+        print(ych)
+        # ID, Chat.ID, YchID, MaxPrice, EndTime
+        newinfo = parseutils.get_ych_info(ych[1])
+        newbid = newinfo["payload"][0]
+        newendtime = newinfo["auction"]["ends"]
+        newvals = [ych[0], ych[1], newbid["bid"], newendtime, ych[4]]
+        print(newbid["bid"], ych[2])
+        # If bid from new JSON in not equal to old bid
+        if float(newbid["bid"]) != ych[2]:
+            # Send message about new bid(or cancel of prev bid)
+            self.updater.bot.send_message(
+                chat_id = ych[0],
+                text = self.__new_bid_str.format(
+                    ych[1], 
+                    ych[4], 
+                    newbid["name"], 
+                    newbid["bid"]
+                ), 
+                parse_mode=self.__parse_mode
+            )
+        self.db.add_new_ych(newvals)
+        if newendtime < newinfo["time"]:
+            # Send message that auction is over
+            self.updater.bot.send_message(
+                chat_id = ych[0],
+                text = self.__ych_fin_str.format(
+                    ych[1], 
+                    ych[4], 
+                    newbid["name"], 
+                    newbid["bid"]
+                ), 
+                parse_mode=self.__parse_mode
+            )
+            self.db.delete_watch(ych[1])
 
     # Bot Handlers
-
     def reply(self, bot, update):
-        # TODO: Refactoring of this function
-        id = parseutils.get_ychid_by_link(update.message.text)
-        if id == 0:
+        # User should send us a link to Ych auction
+        ychlink = update.message.text
+        ychid = parseutils.get_ychid_by_link(ychlink)
+        # Parseutils method returns 0 if there was an error. Checking.
+        if ychid == 0:
             # Sending Error message
             self.send_err(bot, update)
             return
-        data = parseutils.get_ych_info(id)
-        bid, endtime = data["payload"][0], data["auction"]["ends"]
-        name, b = bid["name"], float(bid["bid"])
+        # data - JSON
+        data = parseutils.get_ych_info(ychid)
+        # Getting info from JSON
+        last_bid, endtime = data["payload"][0], data["auction"]["ends"]
+        name, bid = last_bid["name"], float(last_bid["bid"])
+        # Set ychdata array for DB function
         ychdata = [
-            update.message.chat.id,
-            data["id"],
-            bid["bid"],
-            endtime,
-            update.message.text
+            update.message.chat.id, # 0: ChatID
+            ychid,                  # 1: YchID
+            bid,                    # 2: Last bid value
+            endtime,                # 3: Auction ending time
+            ychlink                 # 4: A link to auction
         ]
+        # Send data to DB
         self.db.add_new_ych(ychdata)
+        # Send message to user
         bot.send_message(
             chat_id = update.message.chat_id, 
-            text = self.__add_ych_str.format(data["id"],ychdata[4], name, b), 
+            text = self.__add_ych_str.format(ychid, ychlink, name, bid), 
             parse_mode=self.__parse_mode
         )
     
