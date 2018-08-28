@@ -5,12 +5,13 @@ import configparser
 import time
 import sqlitedb
 import parseutils
+import timeutils
 
 class YchBot:
     # Strings
     __add_ych_str = (
         '*You\'ve added Ych to watchlist.*\nYchID: '
-        '#{}\nLink: {}\nLast bid: *{}* - *{}$*'
+        '#{}\nLink: {}\nTime left: *{}*\nLast bid: *{}* - *${}*'
     )
     __start_str = (
         'Hi! I\'m a bot that does some work for you\n'
@@ -21,14 +22,21 @@ class YchBot:
         'Thanks for using this bot. I\'ve cleaned all your subscriptions'
         ', so I won\'t message you anymore. Goodbye.'
     )
-    __new_bid_str = '*New bid on Ych #{}.*\nLink: {}\nUser: *{} - {}$*'
+    __new_bid_str = (
+        '*New bid on Ych #{}.*\nLink: {}\n'
+        'Time left: *{}*\nUser: *{} - ${}*'
+    )
     __cancel_bid_str = (
         '*Previous bid on Ych #{} has been cancelled.*\n'
-        'Link: {}\n\n*Current bid*\nUser: *{} - {}$*'
+        'Link: {}\n\nTime left: *{}*\n*Current bid*\nUser: *{} - {}$*'
     )
-    __ych_fin_str = '*Ych #{} finished.*\nLink: {}\nWinner: *{} - {}$*'
+    __ych_fin_str = '*Ych #{} finished.*\nLink: {}\nWinner: *{} - ${}*'
     __error_str = 'You probably made mistake somewhere'
-
+    __watchlist_start_str = '*Your watchlist:*'
+    __watchlist_watch_str = (
+        '*\n{}) Ych #*[{}]({})\nTime left: *{}*\nCurrent bid: *{} - ${}*'
+    )
+    __delete_str = 'Deleted Ych #{}'
     # Constants
     __parse_mode = telegram.ParseMode.MARKDOWN
 
@@ -42,8 +50,8 @@ class YchBot:
 
     # Updates info about single Ych
     def update_ych(self, ych):
-        # ych = [Chat.ID, YchID, MaxPrice, EndTime, Link]
-        chatid, ychid, oldbid, _, link = ych
+        # ych = [Chat.ID, YchID, Name, MaxPrice, EndTime, Link]
+        chatid, ychid, _, oldbid, _, link = ych
         newinfo = parseutils.get_ych_info(ychid)
         # Getting info about last bid from JSON
         lastbid = newinfo["payload"][0]
@@ -52,8 +60,10 @@ class YchBot:
         newendtime = newinfo["auction"]["ends"]
         curtime = newinfo["time"]
         # Setting values for DB
-        newvals = [chatid, ychid, newbid, newendtime, link]
+        newvals = [chatid, ychid, newname, newbid, newendtime, link]
         print(newbid, oldbid)
+        # Time difference stuff
+        remtime = timeutils.get_rdbl_timediff(newendtime)
         # If bid from new JSON in not equal to old bid
         if float(newbid) != oldbid:
             # Add new info to DB
@@ -70,6 +80,7 @@ class YchBot:
                 text = msg.format(
                     ychid, 
                     link, 
+                    remtime,
                     newname, 
                     newbid
                 ), 
@@ -83,13 +94,14 @@ class YchBot:
                 text = self.__ych_fin_str.format(
                     ychid, 
                     link, 
+                    remtime,
                     newname, 
                     newbid
                 ), 
                 parse_mode = self.__parse_mode
             )
             # Delete from DB
-            self.db.delete_watch(YchBot)
+            self.db.delete_watch(ychid, chatid)
         # Log
         logging.log(logging.INFO, "Updated Ych: {}".format(ych))
 
@@ -112,16 +124,19 @@ class YchBot:
         ychdata = [
             update.message.chat.id, # 0: ChatID
             ychid,                  # 1: YchID
-            bid,                    # 2: Last bid value
-            endtime,                # 3: Auction ending time
-            ychlink                 # 4: A link to auction
+            name,                   # 2: Bidder Name
+            bid,                    # 3: Last bid value
+            endtime,                # 4: Auction ending time
+            ychlink                 # 5: A link to auction
         ]
         # Send data to DB
         self.db.add_new_ych(ychdata)
+        # Time difference stuff
+        remtime = timeutils.get_rdbl_timediff(endtime)
         # Send message to user
         bot.send_message(
             chat_id = update.message.chat_id, 
-            text = self.__add_ych_str.format(ychid, ychlink, name, bid), 
+            text = self.__add_ych_str.format(ychid, ychlink, remtime, name, bid), 
             parse_mode=self.__parse_mode
         )
     
@@ -137,8 +152,43 @@ class YchBot:
     def stop(self, bot, update):
         ychs = list(self.db.get_all_user_watches(update.message.chat.id))
         for y in ychs:
-            self.db.delete_watch(y[0])
+            self.db.delete_watch(y[0], update.message.chat.id) # y[0] - YchID
         bot.send_message(chat_id = update.message.chat_id, text = self.__stop_str)
+
+    def watchlist(self, bot, update):
+        message = self.__watchlist_start_str
+        ychs = list(self.db.get_all_user_watches(update.message.chat.id))
+        for i, ych in enumerate(ychs, start = 1):
+            ychid, name, bid, endtime, link  = ych
+            # Time difference stuff
+            remtime = timeutils.get_rdbl_timediff(endtime)
+            # Send a message
+            message += self.__watchlist_watch_str.format(
+                i,
+                ychid,
+                link,
+                remtime,
+                name,
+                bid
+            )
+        bot.send_message(
+            chat_id = update.message.chat_id,
+            text = message,
+            parse_mode=self.__parse_mode
+        )
+
+    def delete(self, bot, update, args):
+        userid = update.message.chat.id
+        try:
+            ychid = int(args[0])
+        except Exception:
+            self.send_err(bot, update)
+        else:
+            self.db.delete_watch(ychid, userid)
+            bot.send_message(
+                chat_id = userid,
+                text = self.__delete_str.format(ychid),
+            )
 
     # Init
     def __init__(self):
@@ -153,6 +203,8 @@ class YchBot:
         self.handlers = [
             CommandHandler('start', self.start),
             CommandHandler('stop', self.stop),
+            CommandHandler('list', self.watchlist),
+            CommandHandler('del', self.delete, pass_args=True),
             MessageHandler(Filters.all, self.reply)
         ]
         for handler in self.handlers:
