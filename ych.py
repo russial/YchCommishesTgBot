@@ -1,126 +1,172 @@
-import requests
-from bs4 import BeautifulSoup
-from lxml import html
 import telegram
 from telegram.ext import Updater, MessageHandler, Filters, CommandHandler
 import logging
 import configparser
-import os.path
-import sqlite3
 import time
-import linkutils
+import sqlitedb
+import parseutils
 
-headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
-ych_url = 'https://ych.commishes.com/auction/getbids/{}'
+class YchBot:
+    # Strings
+    __add_ych_str = (
+        '*You\'ve added Ych to watchlist.*\nYchID: '
+        '#{}\nLink: {}\nLast bid: *{}* - *{}$*'
+    )
+    __start_str = (
+        'Hi! I\'m a bot that does some work for you\n'
+        'You can send me link to Ych you want to get updates '
+        'about and I will notify you about changes.'
+    )
+    __stop_str = (
+        'Thanks for using this bot. I\'ve cleaned all your subscriptions'
+        ', so I won\'t message you anymore. Goodbye.'
+    )
+    __new_bid_str = '*New bid on Ych #{}.*\nLink: {}\nUser: *{} - {}$*'
+    __ych_fin_str = '*Ych #{} finished.*\nLink: {}\nWinner: *{} - {}$*'
+    __error_str = 'You probably made mistake somewhere'
 
-# Initialisation
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',level=logging.INFO)
+    # Constants
 
-config = configparser.ConfigParser()
-config.read('config.ini')
-updater = Updater(token=config['bot']['TOKEN'])
-dispatcher = updater.dispatcher
-dbexists = os.path.isfile("shorobot.db")
+    __parse_mode = telegram.ParseMode.MARKDOWN
 
-# Connect to DB
-conn = sqlite3.connect("shorobot.db")
-cursor = conn.cursor()
+    # Functions
+    def update_cycle(self):
+        logging.log(logging.INFO, "Started Ych Update Cycle")
+        while True:
+            for ych in self.db.get_all_watches():
+                self.update_ych(list(ych))
+            time.sleep(60)            
 
-# Init DB if not exists
-if not dbexists:
-    cursor.execute("""
-    CREATE TABLE ychs
-    (chatid bigint, ychid int, maxprice float, endtime bigint, link varchar,
-    PRIMARY KEY (chatid, ychid))
-    """)
-conn.commit()
-
-def add_new_ych_to_db(ychdata):
-    conn = sqlite3.connect("shorobot.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-    INSERT OR REPLACE INTO ychs (chatid, ychid, maxprice, endtime, link) VALUES (?,?,?,?,?)
-    """, ychdata)
-    # TODO: INSERT OR DO NOTHING
-    conn.commit()    
-
-def get_all_watched_yches():
-    conn = sqlite3.connect("shorobot.db")
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM ychs')
-    return cursor.fetchall()
-
-def get_all_watched_yches_by_user(id):
-    conn = sqlite3.connect("shorobot.db")
-    cursor = conn.cursor()
-    cursor.execute('SELECT (ychid) FROM ychs WHERE chatid=?', (id,))
-    return cursor.fetchall()
-
-def delete_ych(id):
-    conn = sqlite3.connect("shorobot.db")
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM ychs WHERE ychid = ?', (id,))
-    # TODO: INSERT OR DO NOTHING
-    conn.commit()    
-
-def get_ychid_by_link(url):
-    url = url.split('/')
-    if len(url) >= 6:
-        return linkutils.get_10(url[5])
-    else:
-        return 0
-
-def get_ych_info(id):
-    ych_json = requests.get(ych_url.format(id), headers)
-    data = ych_json.json()
-    data["id"] = id
-    return data
-
-def reply_to_message(bot, update):
-    id = get_ychid_by_link(update.message.text)
-    if id == 0:
-        bot.send_message(chat_id = update.message.chat_id, text = "You probably made mistake somewhere")
-        return
-    data = get_ych_info(id)
-    bid, endtime = data["payload"][0], data["auction"]["ends"]
-    name, b = bid["name"], float(bid["bid"])
-    ychdata=[update.message.chat.id, data["id"], bid["bid"], endtime, update.message.text]
-    add_new_ych_to_db(ychdata)
-    bot.send_message(chat_id = update.message.chat_id, text = '*You\'ve added Ych to watchlist.*\nYchID: #{}\nLink: {}\nLast bid: *{}* - *{}$*'.format(data["id"],ychdata[4], name, b), parse_mode=telegram.ParseMode.MARKDOWN)
-
-def start(bot, update):
-    bot.send_message(chat_id = update.message.chat_id, text = """Hi! I'm a bot that does some work for you
-You can send me link to Ych you want to get updates about and I will notify you about changes.""")
-
-def stop(bot, update):
-    ychs = list(get_all_watched_yches_by_user(update.message.chat.id))
-    for y in ychs:
-        delete_ych(y[0])
-    bot.send_message(chat_id = update.message.chat_id, text = 'Thanks for using this bot. I\'ve cleaned all your subscriptions, so I won\'t message you anymore. Goodbye.')
-
-# Register Handlers
-start_handler = CommandHandler('start', start)
-stop_handler = CommandHandler('stop', stop)
-echo_handler = MessageHandler(Filters.all, reply_to_message)
-dispatcher.add_handler(start_handler)
-dispatcher.add_handler(stop_handler)
-dispatcher.add_handler(echo_handler)
-updater.start_polling()
-
-# ID, Chat.ID, YchID, MaxPrice, EndTime
-while True:
-    time.sleep(60)
-    for val in get_all_watched_yches():
-        val = list(val)
-        newinfo = get_ych_info(val[1])
-        newbid = newinfo["payload"][0]
+    # Updates info about single Ych
+    def update_ych(self, ych):
+        # ych = [Chat.ID, YchID, MaxPrice, EndTime, Link]
+        chatid, ychid, oldbid, _, link = ych
+        newinfo = parseutils.get_ych_info(ychid)
+        # Getting info about last bid from JSON
+        lastbid = newinfo["payload"][0]
+        newbid, newname = lastbid["bid"], lastbid["name"]
+        # Getting bid end time from JSON
         newendtime = newinfo["auction"]["ends"]
-        newvals = [val[0], val[1], newbid["bid"], newendtime, val[4]]
-        print(newbid["bid"], val[2])
-        if float(newbid["bid"]) > val[2]:
-            updater.bot.send_message(chat_id = val[0], text = '*New bid on Ych #{}.*\nLink: {}\nUser: *{} - {}$*'.format(val[1], val[4], newbid["name"], newbid["bid"]), parse_mode=telegram.ParseMode.MARKDOWN)
-        add_new_ych_to_db(newvals)
-        if newendtime < newinfo["time"]:
-            updater.bot.send_message(chat_id = val[0], text = '*Ych #{} finished.*\nLink: {}\nWinner: *{} - {}$*'.format(val[1], val[4], newbid["name"], newbid["bid"]), parse_mode=telegram.ParseMode.MARKDOWN)
-            delete_ych(val[1])
-        print(val)
+        curtime = newinfo["time"]
+        # Setting values for DB
+        newvals = [chatid, ychid, newbid, newendtime, link]
+        print(newbid, oldbid)
+        # If bid from new JSON in not equal to old bid
+        if float(newbid) != oldbid:
+            # Add new info to DB
+            self.db.add_new_ych(newvals)
+            # Send message about new bid(or cancel of prev bid)
+            self.updater.bot.send_message(
+                chat_id = chatid,
+                text = self.__new_bid_str.format(
+                    ychid, 
+                    link, 
+                    newname, 
+                    newbid
+                ), 
+                parse_mode=self.__parse_mode
+            )
+        # If auction end time is less than curtime
+        if newendtime < curtime:
+            # Send message that auction is over
+            self.updater.bot.send_message(
+                chat_id = chatid,
+                text = self.__ych_fin_str.format(
+                    ychid, 
+                    link, 
+                    newname, 
+                    newbid
+                ), 
+                parse_mode=self.__parse_mode
+            )
+            # Delete from DB
+            self.db.delete_watch(YchBot)
+        # Log
+        logging.log(logging.INFO, "Updated Ych: {}".format(ych))
+
+    # Bot Handlers
+    def reply(self, bot, update):
+        # User should send us a link to Ych auction
+        ychlink = update.message.text
+        ychid = parseutils.get_ychid_by_link(ychlink)
+        # Parseutils method returns 0 if there was an error. Checking.
+        if ychid == 0:
+            # Sending Error message
+            self.send_err(bot, update)
+            return
+        # data - JSON
+        data = parseutils.get_ych_info(ychid)
+        # Getting info from JSON
+        last_bid, endtime = data["payload"][0], data["auction"]["ends"]
+        name, bid = last_bid["name"], float(last_bid["bid"])
+        # Set ychdata array for DB function
+        ychdata = [
+            update.message.chat.id, # 0: ChatID
+            ychid,                  # 1: YchID
+            bid,                    # 2: Last bid value
+            endtime,                # 3: Auction ending time
+            ychlink                 # 4: A link to auction
+        ]
+        # Send data to DB
+        self.db.add_new_ych(ychdata)
+        # Send message to user
+        bot.send_message(
+            chat_id = update.message.chat_id, 
+            text = self.__add_ych_str.format(ychid, ychlink, name, bid), 
+            parse_mode=self.__parse_mode
+        )
+    
+    def send_err(self, bot, update):
+        bot.send_message(
+            chat_id = update.message.chat_id,
+            text = self.__error_str
+        )
+
+    def start(self, bot, update):
+        bot.send_message(chat_id = update.message.chat_id, text = self.__start_str)
+
+    def stop(self, bot, update):
+        ychs = list(self.db.get_all_user_watches(update.message.chat.id))
+        for y in ychs:
+            self.db.delete_watch(y[0])
+        bot.send_message(chat_id = update.message.chat_id, text = self.__stop_str)
+
+    # Init
+    def __init__(self):
+        # Initialisation
+        self.config = configparser.ConfigParser()
+        self.config.read('config.ini')
+        self.updater = Updater(token=self.config['bot']['token'])
+        self.dispatcher = self.updater.dispatcher
+        self.db = sqlitedb.YchDb(self.config['bot']['dbpath'])
+
+        # Register Handlers
+        self.handlers = [
+            CommandHandler('start', self.start),
+            CommandHandler('stop', self.stop),
+            MessageHandler(Filters.all, self.reply)
+        ]
+        for handler in self.handlers:
+            self.dispatcher.add_handler(handler)
+        
+    # Run function
+    def run(self):
+        # Start polling 
+        self.updater.start_polling()
+        # Waiting for graceful terminate
+        # Probably there's a need to start these two in different threads
+        # self.updater.idle()
+        # Start update cycle
+        self.update_cycle()
+
+# If running as main function
+if __name__ == "__main__":
+    # Setup logging
+    logging.basicConfig(
+        format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level = logging.INFO
+    )
+
+    # Creating Bot instance and running it
+    ych = YchBot()
+    ych.run()
