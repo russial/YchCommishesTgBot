@@ -31,6 +31,7 @@ class YchBot:
 
     # Functions
     def update_cycle(self):
+        logging.log(logging.INFO, "Started Ych Update Cycle")
         while True:
             for ych in self.db.get_all_watches():
                 self.update_ych(list(ych))
@@ -38,40 +39,50 @@ class YchBot:
 
     # Updates info about single Ych
     def update_ych(self, ych):
-        print(ych)
-        # ID, Chat.ID, YchID, MaxPrice, EndTime
-        newinfo = parseutils.get_ych_info(ych[1])
-        newbid = newinfo["payload"][0]
+        # ych = [Chat.ID, YchID, MaxPrice, EndTime, Link]
+        chatid, ychid, oldbid, _, link = ych
+        newinfo = parseutils.get_ych_info(ychid)
+        # Getting info about last bid from JSON
+        lastbid = newinfo["payload"][0]
+        newbid, newname = lastbid["bid"], lastbid["name"]
+        # Getting bid end time from JSON
         newendtime = newinfo["auction"]["ends"]
-        newvals = [ych[0], ych[1], newbid["bid"], newendtime, ych[4]]
-        print(newbid["bid"], ych[2])
+        curtime = newinfo["time"]
+        # Setting values for DB
+        newvals = [chatid, ychid, newbid, newendtime, link]
+        print(newbid, oldbid)
         # If bid from new JSON in not equal to old bid
-        if float(newbid["bid"]) != ych[2]:
+        if float(newbid) != oldbid:
+            # Add new info to DB
+            self.db.add_new_ych(newvals)
             # Send message about new bid(or cancel of prev bid)
             self.updater.bot.send_message(
-                chat_id = ych[0],
+                chat_id = chatid,
                 text = self.__new_bid_str.format(
-                    ych[1], 
-                    ych[4], 
-                    newbid["name"], 
-                    newbid["bid"]
+                    ychid, 
+                    link, 
+                    newname, 
+                    newbid
                 ), 
                 parse_mode=self.__parse_mode
             )
-        self.db.add_new_ych(newvals)
-        if newendtime < newinfo["time"]:
+        # If auction end time is less than curtime
+        if newendtime < curtime:
             # Send message that auction is over
             self.updater.bot.send_message(
-                chat_id = ych[0],
+                chat_id = chatid,
                 text = self.__ych_fin_str.format(
-                    ych[1], 
-                    ych[4], 
-                    newbid["name"], 
-                    newbid["bid"]
+                    ychid, 
+                    link, 
+                    newname, 
+                    newbid
                 ), 
                 parse_mode=self.__parse_mode
             )
-            self.db.delete_watch(ych[1])
+            # Delete from DB
+            self.db.delete_watch(YchBot)
+        # Log
+        logging.log(logging.INFO, "Updated Ych: {}".format(ych))
 
     # Bot Handlers
     def reply(self, bot, update):
@@ -143,7 +154,8 @@ class YchBot:
         # Start polling 
         self.updater.start_polling()
         # Waiting for graceful terminate
-        self.updater.idle()
+        # Probably there's a need to start these two in different threads
+        # self.updater.idle()
         # Start update cycle
         self.update_cycle()
 
