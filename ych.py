@@ -5,14 +5,13 @@ import configparser
 import time
 import sqlitedb
 import parseutils
-import datetime
-import dateutil.relativedelta
+import timeutils
 
 class YchBot:
     # Strings
     __add_ych_str = (
         '*You\'ve added Ych to watchlist.*\nYchID: '
-        '#{}\nLink: {}\nLast bid: *{}* - *${}*'
+        '#{}\nLink: {}\nTime left: *{}*\nLast bid: *{}* - *${}*'
     )
     __start_str = (
         'Hi! I\'m a bot that does some work for you\n'
@@ -23,10 +22,13 @@ class YchBot:
         'Thanks for using this bot. I\'ve cleaned all your subscriptions'
         ', so I won\'t message you anymore. Goodbye.'
     )
-    __new_bid_str = '*New bid on Ych #{}.*\nLink: {}\nUser: *{} - ${}*'
+    __new_bid_str = (
+        '*New bid on Ych #{}.*\nLink: {}\n'
+        'Time left: *{}*\nUser: *{} - ${}*'
+    )
     __cancel_bid_str = (
         '*Previous bid on Ych #{} has been cancelled.*\n'
-        'Link: {}\n\n*Current bid*\nUser: *{} - {}$*'
+        'Link: {}\n\nTime left: *{}*\n*Current bid*\nUser: *{} - {}$*'
     )
     __ych_fin_str = '*Ych #{} finished.*\nLink: {}\nWinner: *{} - ${}*'
     __error_str = 'You probably made mistake somewhere'
@@ -60,6 +62,8 @@ class YchBot:
         # Setting values for DB
         newvals = [chatid, ychid, newname, newbid, newendtime, link]
         print(newbid, oldbid)
+        # Time difference stuff
+        remtime = timeutils.get_rdbl_timediff(newendtime)
         # If bid from new JSON in not equal to old bid
         if float(newbid) != oldbid:
             # Add new info to DB
@@ -76,6 +80,7 @@ class YchBot:
                 text = msg.format(
                     ychid, 
                     link, 
+                    remtime,
                     newname, 
                     newbid
                 ), 
@@ -89,6 +94,7 @@ class YchBot:
                 text = self.__ych_fin_str.format(
                     ychid, 
                     link, 
+                    remtime,
                     newname, 
                     newbid
                 ), 
@@ -125,10 +131,12 @@ class YchBot:
         ]
         # Send data to DB
         self.db.add_new_ych(ychdata)
+        # Time difference stuff
+        remtime = timeutils.get_rdbl_timediff(endtime)
         # Send message to user
         bot.send_message(
             chat_id = update.message.chat_id, 
-            text = self.__add_ych_str.format(ychid, ychlink, name, bid), 
+            text = self.__add_ych_str.format(ychid, ychlink, remtime, name, bid), 
             parse_mode=self.__parse_mode
         )
     
@@ -153,14 +161,7 @@ class YchBot:
         for i, ych in enumerate(ychs, start = 1):
             ychid, name, bid, endtime, link  = ych
             # Time difference stuff
-            now = datetime.datetime.now()
-            end = datetime.datetime.fromtimestamp(endtime)
-            dif = dateutil.relativedelta.relativedelta(end, now)
-            remtime = ''
-            attrs = ['days', 'hours', 'minutes']
-            for attr in attrs:
-                if getattr(dif, attr):
-                    remtime += "{} {} ".format(getattr(dif, attr), attr)
+            remtime = timeutils.get_rdbl_timediff(endtime)
             # Send a message
             message += self.__watchlist_watch_str.format(
                 i,
