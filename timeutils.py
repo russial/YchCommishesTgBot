@@ -7,7 +7,11 @@ def readabletime(dif):
     attrs = ['days', 'hours', 'minutes']
     for attr in attrs:
         if getattr(dif, attr):
-            remtime += "{} {} ".format(getattr(dif, attr), attr)
+            if getattr(dif, attr) >= 0:
+                remtime += "{} {} ".format(getattr(dif, attr), attr)
+            else:
+                remtime = "Finished"
+                break
     return remtime
 
 def get_diff(end, start):
