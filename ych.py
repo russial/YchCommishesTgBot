@@ -51,7 +51,7 @@ class YchBot:
     # Updates info about single Ych
     def update_ych(self, ych):
         # ych = [Chat.ID, YchID, Name, MaxPrice, EndTime, Link]
-        chatid, ychid, _, oldbid, _, link = ych
+        chatid, ychid, oldname, oldbid, _, link = ych
         newinfo = parseutils.get_ych_info(ychid)
         # Getting info about last bid from JSON
         lastbid = newinfo["payload"][0]
@@ -65,12 +65,12 @@ class YchBot:
         # Time difference stuff
         remtime = timeutils.get_rdbl_timediff(newendtime)
         # If bid from new JSON in not equal to old bid
-        if float(newbid) != oldbid:
+        if float(newbid) != oldbid or oldname != newname:
             # Add new info to DB
             self.db.add_new_ych(newvals)
             # Check if bid has been cancelled
             msg = ''
-            if float(newbid) > oldbid:
+            if float(newbid) >= oldbid:
                 msg = self.__new_bid_str
             else:
                 msg = self.__cancel_bid_str
