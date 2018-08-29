@@ -94,7 +94,6 @@ class YchBot:
                 text = self.__ych_fin_str.format(
                     ychid, 
                     link, 
-                    remtime,
                     newname, 
                     newbid
                 ), 
