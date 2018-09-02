@@ -1,3 +1,4 @@
+import time
 import baseutils
 import requests
 
@@ -19,7 +20,14 @@ def get_ychid_by_link(url):
         return 0
 
 def get_ych_info(id):
-    ych_json = requests.get(ych_url.format(id), headers)
+    while True:
+        try:
+            ych_json = requests.get(ych_url.format(id), headers)
+            break
+        except ConnectionError:
+            print("Except ConnectionError")
+            time.sleep(3)
+            print("Slept for 3 seconds, trying again")
     data = ych_json.json()
     data['id'] = id
     return data
