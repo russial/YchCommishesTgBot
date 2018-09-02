@@ -27,6 +27,7 @@ def get_ych_info(id):
         except ConnectionError:
             print("Except ConnectionError")
             time.sleep(3)
+            print("Slept for 3 seconds, trying again")
     data = ych_json.json()
     data['id'] = id
     return data
