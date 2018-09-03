@@ -23,11 +23,15 @@ def get_ych_info(id):
     while True:
         try:
             ych_json = requests.get(ych_url.format(id), headers)
+            data = ych_json.json()
             break
         except ConnectionError:
             print("Except ConnectionError")
             time.sleep(2)
             print("Slept for 2 seconds, trying again")
-    data = ych_json.json()
+        except ValueError:
+            print("Except JSONDecodeError")
+            time.sleep(2)
+            print("Slept for 2 seconds, trying again")
     data['id'] = id
     return data
